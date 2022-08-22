@@ -21,11 +21,11 @@ pritunl-client add pritunl-config.tar
 # Connect to VPN Server
 VPN_ID=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $2 }' | xargs) && echo "VPN_ID: $VPN_ID"
 pritunl-client start $VPN_ID -p $INPUT_VPN_PASS
-sleep 7
+sleep 10
 RETRY=0
 
 while [ $RETRY -lt 5 ]; do
-	sleep 7
+	sleep 10
 	((RETRY += 1))
 	echo "Retry Connection: $RETRY"
 	STATUS=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $6 }' | xargs)
