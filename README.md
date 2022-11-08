@@ -31,7 +31,7 @@ jobs:
     name: dosomething
     steps:
       - name: Step Connect to VPN
-        uses: munditrade/action-connect_vpn@v1
+        uses: munditrade/action-connect_vpn@v1.1
         id: vpn
         with:
           vpn_config: ${{ secrets.VPN_CONFIG }}
