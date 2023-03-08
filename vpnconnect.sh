@@ -24,8 +24,8 @@ pritunl-client start $VPN_ID -p $INPUT_VPN_PASS
 sleep 10
 RETRY=0
 
-while [ $RETRY -lt 5 ]; do
-	sleep 10
+while [ $RETRY -lt 10 ]; do
+	sleep 5
 	((RETRY += 1))
 	echo "Retry Connection: $RETRY"
 	STATUS=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $6 }' | xargs)
