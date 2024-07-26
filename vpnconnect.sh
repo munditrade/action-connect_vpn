@@ -13,7 +13,7 @@ deb https://repo.pritunl.com/stable/apt jammy main
 EOF
 gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys 7568D9BB55FF9E5287D586017AE645C0CF8E292A
 gpg --armor --export 7568D9BB55FF9E5287D586017AE645C0CF8E292A | sudo tee /etc/apt/trusted.gpg.d/pritunl.asc
-sudo apt-get clean && sudo apt-get update && sudo apt-get install -y pritunl-client
+sudo apt-get clean && sudo apt-get update && sudo apt-get -o Acquire::CompressionTypes::Order::=gz install -y pritunl-client
 
 # Add VPN Config to Pritunl Client
 pritunl-client add pritunl-config.tar
