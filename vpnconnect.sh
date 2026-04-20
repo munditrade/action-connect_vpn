@@ -52,12 +52,12 @@ while [ $RETRY -lt 10 ]; do
   echo "Retry Connection: $RETRY"
   STATUS=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $6 }' | xargs)
   echo "Status: $STATUS"
-  if [ "$STATUS" = "Connected" ]; then
+  if [[ "$STATUS" != "Connecting" && -n "$STATUS" ]]; then
     break
   fi
 done
 
-if [ "$STATUS" = "Connected" ]; then
+if [[ "$STATUS" != "Connecting" && -n "$STATUS" ]]; then
   echo "Connection success"
 else
   echo "Unable to connect, last status: $STATUS"
