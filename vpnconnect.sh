@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Map Variables
 INPUT_VPN_CONFIG=$1
@@ -17,11 +17,16 @@ CODENAME=$(lsb_release -cs)
 # Set up modern keyring directory
 sudo mkdir -p /etc/apt/keyrings
 
-# Import GPG key via HTTPS (avoids HKP port 11371 which is blocked on some runners)
-curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x7568D9BB55FF9E5287D586017AE645C0CF8E292A" \
-  | gpg --dearmor \
-  | sudo tee /etc/apt/keyrings/pritunl.gpg > /dev/null
+# Pritunl repo key is vendored (pritunl_repo_pub.asc, fingerprint
+# 7568D9BB55FF9E5287D586017AE645C0CF8E292A) so the install does not depend on
+# keyserver.ubuntu.com, which times out from the runners and left an empty keyring.
+KEY_SRC="$(dirname "$(readlink -f "$0")")/pritunl_repo_pub.asc"
+gpg --dearmor < "$KEY_SRC" | sudo tee /etc/apt/keyrings/pritunl.gpg > /dev/null
 sudo chmod 644 /etc/apt/keyrings/pritunl.gpg
+if ! gpg --show-keys --with-colons /etc/apt/keyrings/pritunl.gpg | grep -q '^fpr:.*7568D9BB55FF9E5287D586017AE645C0CF8E292A'; then
+  echo "Error: Pritunl repo key fingerprint mismatch"
+  exit 1
+fi
 
 # Add Pritunl repository with signed-by for modern apt
 sudo tee /etc/apt/sources.list.d/pritunl.list <<EOF
