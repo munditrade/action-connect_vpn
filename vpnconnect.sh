@@ -1,6 +1,10 @@
 #!/bin/bash
 set -eo pipefail
 
+# Apt options: timeout after 30s per request, retry up to 3 times.
+# Prevents jobs from hanging for hours when a mirror is unresponsive.
+APT_OPTS=(-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3)
+
 # Map Variables
 INPUT_VPN_CONFIG=$1
 INPUT_VPN_PASS=$2
@@ -9,7 +13,7 @@ INPUT_VPN_PASS=$2
 echo $INPUT_VPN_CONFIG | base64 -d - >pritunl-config.ovpn && tar --create --file=pritunl-config.tar pritunl-config.ovpn
 
 # Install prerequisites (gnupg for key handling, lsb-release for codename detection)
-sudo apt-get update && sudo apt-get install -y gnupg lsb-release curl
+timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y gnupg lsb-release curl
 
 # Detect Ubuntu codename
 CODENAME=$(lsb_release -cs)
@@ -34,7 +38,7 @@ deb [signed-by=/etc/apt/keyrings/pritunl.gpg] https://repo.pritunl.com/stable/ap
 EOF
 
 # Install VPN Client
-sudo apt-get update && sudo apt-get install -y pritunl-client
+timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y pritunl-client
 
 # Verify pritunl-client was installed
 if ! command -v pritunl-client &>/dev/null; then
