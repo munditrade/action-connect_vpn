@@ -63,20 +63,25 @@ for RETRY in $(seq 1 30); do
   sleep 2
   ADDR=$(client_addr || true)
   RUN_STATE=$(pritunl-client list -j | jq -r --arg id "$VPN_ID" '.[] | select(.id == $id) | .run_state' || true)
-  echo "Attempt $RETRY: run_state=$RUN_STATE client_address=${ADDR:-none}"
+  echo "Attempt $RETRY: run_state=$RUN_STATE connected=$([[ -n "$ADDR" ]] && echo yes || echo no)"
   if [[ -n "$ADDR" ]]; then
-    echo "Connection success ($ADDR)"
+    echo "Connection success"
     exit 0
   fi
 done
 
 echo "::error::VPN did not connect (no client address after 60s)"
-echo "::group::pritunl-client diagnostics"
-pritunl-client list || true
-pritunl-client logs "$VPN_ID" || true
-sudo journalctl -u pritunl-client --no-pager -n 200 || true
-openvpn --version | head -1 || true
-ip -br addr || true
-resolvectl status || true
-echo "::endgroup::"
+# Diagnostics expose server/client addresses and routes: only on "Re-run with debug logging".
+if [[ "${RUNNER_DEBUG:-}" == "1" ]]; then
+  echo "::group::pritunl-client diagnostics"
+  pritunl-client list || true
+  pritunl-client logs "$VPN_ID" || true
+  sudo journalctl -u pritunl-client --no-pager -n 200 || true
+  openvpn --version | head -1 || true
+  ip -br addr || true
+  resolvectl status || true
+  echo "::endgroup::"
+else
+  echo "Re-run the job with debug logging enabled to print pritunl/openvpn diagnostics."
+fi
 exit 1
