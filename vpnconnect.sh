@@ -13,7 +13,7 @@ INPUT_VPN_PASS=$2
 echo $INPUT_VPN_CONFIG | base64 -d - >pritunl-config.ovpn && tar --create --file=pritunl-config.tar pritunl-config.ovpn
 
 # Install prerequisites (gnupg for key handling, lsb-release for codename detection)
-timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y gnupg lsb-release curl
+timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y gnupg lsb-release curl jq
 
 # Detect Ubuntu codename
 CODENAME=$(lsb_release -cs)
@@ -50,25 +50,33 @@ fi
 pritunl-client add pritunl-config.tar
 
 # Connect to VPN Server
-VPN_ID=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $2 }' | xargs) && echo "VPN_ID: $VPN_ID"
-pritunl-client start $VPN_ID -p $INPUT_VPN_PASS
-sleep 10
-RETRY=0
+# Read state from JSON: the table's 6th column is "Autostart" (always "Disabled"),
+# so the old check reported success even when the tunnel never came up.
+VPN_ID=$(pritunl-client list -j | jq -r '.[0].id') && echo "VPN_ID: $VPN_ID"
+pritunl-client start "$VPN_ID" -p "$INPUT_VPN_PASS"
 
-while [ $RETRY -lt 10 ]; do
-  sleep 5
-  ((RETRY += 1))
-  echo "Retry Connection: $RETRY"
-  STATUS=$(pritunl-client list | sed -n '4p' | awk -F '|' '{ print $6 }' | xargs)
-  echo "Status: $STATUS"
-  if [[ "$STATUS" != "Connecting" && -n "$STATUS" ]]; then
-    break
+client_addr() {
+  pritunl-client list -j | jq -r --arg id "$VPN_ID" '.[] | select(.id == $id) | .client_address // empty'
+}
+
+for RETRY in $(seq 1 30); do
+  sleep 2
+  ADDR=$(client_addr || true)
+  RUN_STATE=$(pritunl-client list -j | jq -r --arg id "$VPN_ID" '.[] | select(.id == $id) | .run_state' || true)
+  echo "Attempt $RETRY: run_state=$RUN_STATE client_address=${ADDR:-none}"
+  if [[ -n "$ADDR" ]]; then
+    echo "Connection success ($ADDR)"
+    exit 0
   fi
 done
 
-if [[ "$STATUS" != "Connecting" && -n "$STATUS" ]]; then
-  echo "Connection success"
-else
-  echo "Unable to connect, last status: $STATUS"
-  exit 1
-fi
+echo "::error::VPN did not connect (no client address after 60s)"
+echo "::group::pritunl-client diagnostics"
+pritunl-client list || true
+pritunl-client logs "$VPN_ID" || true
+sudo journalctl -u pritunl-client --no-pager -n 200 || true
+openvpn --version | head -1 || true
+ip -br addr || true
+resolvectl status || true
+echo "::endgroup::"
+exit 1
