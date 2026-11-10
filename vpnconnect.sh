@@ -59,12 +59,24 @@ client_addr() {
   pritunl-client list -j | jq -r --arg id "$VPN_ID" '.[] | select(.id == $id) | .client_address // empty'
 }
 
+# openvpn >= 2.7 (Ubuntu 26.04) applies the pushed DNS to tun* with domain "~.",
+# hijacking all runner lookups right after connect ("Resolving timed out").
+# The VPN only pushes a public resolver, so keep the runner's DNS as on 2.6.
+restore_runner_dns() {
+  command -v resolvectl &>/dev/null || return 0
+  for IFACE in $(ip -o link show | awk -F': ' '$2 ~ /^tun/ {print $2}'); do
+    sudo resolvectl revert "$IFACE" || true
+  done
+  sudo resolvectl flush-caches || true
+}
+
 for RETRY in $(seq 1 30); do
   sleep 2
   ADDR=$(client_addr || true)
   RUN_STATE=$(pritunl-client list -j | jq -r --arg id "$VPN_ID" '.[] | select(.id == $id) | .run_state' || true)
   echo "Attempt $RETRY: run_state=$RUN_STATE connected=$([[ -n "$ADDR" ]] && echo yes || echo no)"
   if [[ -n "$ADDR" ]]; then
+    restore_runner_dns
     echo "Connection success"
     exit 0
   fi
