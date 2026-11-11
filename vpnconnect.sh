@@ -12,11 +12,41 @@ INPUT_VPN_PASS=$2
 # Get VPN Config File
 echo $INPUT_VPN_CONFIG | base64 -d - >pritunl-config.ovpn && tar --create --file=pritunl-config.tar pritunl-config.ovpn
 
-# Install prerequisites (gnupg for key handling, lsb-release for codename detection)
-timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y gnupg lsb-release curl jq
-
 # Detect Ubuntu codename
-CODENAME=$(lsb_release -cs)
+. /etc/os-release
+CODENAME=$VERSION_CODENAME
+
+# Third-party Ubuntu mirrors on their own domains, used when Canonical's are
+# unreachable (2026-11-11: archive/security.ubuntu.com DNS outage). apt still
+# checks the Ubuntu archive signature, so a mirror cannot alter packages.
+FALLBACK_MIRRORS=(https://mirrors.edge.kernel.org/ubuntu https://mirror.us.leaseweb.net/ubuntu https://mirrors.mit.edu/ubuntu)
+
+apt_install() {
+  if curl -fsS -m 10 -o /dev/null "http://archive.ubuntu.com/ubuntu/dists/$CODENAME/InRelease"; then
+    timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y "$@" && return 0
+  fi
+  local dir opts
+  dir=$(mktemp -d)
+  [[ -f /etc/apt/sources.list.d/pritunl.list ]] && cp /etc/apt/sources.list.d/pritunl.list "$dir/"
+  for MIRROR in "${FALLBACK_MIRRORS[@]}"; do
+    curl -fsS -m 10 -o /dev/null "$MIRROR/dists/$CODENAME/InRelease" || continue
+    echo "Ubuntu mirrors unreachable, installing from $MIRROR"
+    printf 'Types: deb\nURIs: %s\nSuites: %s %s-updates %s-security\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \
+      "$MIRROR" "$CODENAME" "$CODENAME" "$CODENAME" > "$dir/ubuntu-fallback.sources"
+    opts=("${APT_OPTS[@]}" -o Dir::Etc::SourceList=/dev/null -o Dir::Etc::SourceParts="$dir")
+    timeout 300 sudo apt-get "${opts[@]}" update && timeout 300 sudo apt-get "${opts[@]}" install -y "$@" && return 0
+  done
+  return 1
+}
+
+# Prerequisites ship with the GitHub runner images; install only what is missing.
+MISSING=()
+command -v gpg &>/dev/null || MISSING+=(gnupg)
+command -v curl &>/dev/null || MISSING+=(curl)
+command -v jq &>/dev/null || MISSING+=(jq)
+if (( ${#MISSING[@]} )); then
+  apt_install "${MISSING[@]}" || true
+fi
 
 # Set up modern keyring directory
 sudo mkdir -p /etc/apt/keyrings
@@ -38,7 +68,7 @@ deb [signed-by=/etc/apt/keyrings/pritunl.gpg] https://repo.pritunl.com/stable/ap
 EOF
 
 # Install VPN Client
-timeout 300 sudo apt-get "${APT_OPTS[@]}" update && timeout 300 sudo apt-get "${APT_OPTS[@]}" install -y pritunl-client
+apt_install pritunl-client || true
 
 # Verify pritunl-client was installed
 if ! command -v pritunl-client &>/dev/null; then
